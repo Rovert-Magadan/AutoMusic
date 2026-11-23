@@ -11,9 +11,19 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.delay
 
 private val navy = Color(0xFF07162E)
@@ -75,7 +86,7 @@ private fun AutoMusicScreen() {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("♫ AutoMusic", color = yellow, fontWeight = FontWeight.Bold, fontSize = if (narrow) 18.sp else 25.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Control(if (shuffle) "⤨" else "⤨", { shuffle = !shuffle }, height = 42.dp, small = true, accent = shuffle)
+                    ShuffleButton(shuffle, { shuffle = !shuffle })
                     Control(if (source == "Избранное") "Моя волна" else "Избранное", { source = if (source == "Избранное") "Моя волна" else "Избранное"; index = 0; seconds = 0 }, height = 42.dp, small = true)
                     Control(if (showList) "Плеер" else "Список", { showList = !showList }, height = 42.dp, small = true)
                 }
@@ -113,7 +124,7 @@ private fun AutoMusicScreen() {
                     }
                 }
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                    Slider(value = seconds.toFloat(), onValueChange = { seconds = it.toInt() }, valueRange = 0f..duration.toFloat(), modifier = Modifier.fillMaxWidth().height(if (short) 26.dp else 34.dp), colors = SliderDefaults.colors(thumbColor = yellow, activeTrackColor = yellow, inactiveTrackColor = Color(0xFF284466)))
+                    ProgressSeek(seconds, { seconds = it })
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(time(seconds), color = pale, fontSize = 11.sp)
                         Text(time(duration), color = pale, fontSize = 11.sp)
@@ -121,13 +132,13 @@ private fun AutoMusicScreen() {
                 }
                 Spacer(Modifier.weight(1f, fill = true))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.width(if (short) 82.dp else 115.dp)) { SymbolButton(true, liked, { liked = !liked; if (liked) disliked = false }, if (short) 48.dp else 62.dp) }
-                    Spacer(Modifier.width(if (short) 20.dp else 34.dp))
-                    Box(Modifier.width(if (short) 82.dp else 115.dp)) { SymbolButton(false, disliked, { disliked = !disliked; if (disliked) liked = false }, if (short) 48.dp else 62.dp) }
+                    Box(Modifier.width(if (short) 105.dp else 135.dp)) { SymbolButton(true, liked, { liked = !liked; if (liked) disliked = false }, if (short) 55.dp else 68.dp) }
+                    Spacer(Modifier.width(if (short) 16.dp else 30.dp))
+                    Box(Modifier.width(if (short) 105.dp else 135.dp)) { SymbolButton(false, disliked, { disliked = !disliked; if (disliked) liked = false }, if (short) 55.dp else 68.dp) }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Box(Modifier.weight(1f)) { Control("⏮", { index = (index + tracks.size - 1) % tracks.size; seconds = 0 }, full = true, height = if (short) 65.dp else 76.dp, fontSize = 30) }
-                    Box(Modifier.weight(1f)) { Control(if (playing) "Ⅱ" else "▶", { playing = !playing }, full = true, accent = true, height = if (short) 65.dp else 76.dp, fontSize = 30) }
+                Row(Modifier.fillMaxWidth().height(if (short) 75.dp else 100.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { Control("⏮", { index = (index + tracks.size - 1) % tracks.size; seconds = 0 }, full = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
+                    Box(Modifier.weight(1f)) { PlayButton(playing, { playing = !playing }, if (short) 72.dp else 94.dp) }
                     Box(Modifier.weight(1f)) { Control("⏭", { index = (index + 1) % tracks.size; seconds = 0 }, full = true, height = if (short) 65.dp else 76.dp, fontSize = 30) }
                 }
             }
@@ -141,25 +152,98 @@ private fun time(seconds: Int) = "%d:%02d".format(seconds / 60, seconds % 60)
 @Composable
 private fun WaveBackground() {
     Canvas(Modifier.fillMaxSize()) {
-        drawRect(brush = Brush.verticalGradient(listOf(Color(0xFF040C20), Color(0xFF061B39), Color(0xFF040D20))))
+        drawRect(brush = Brush.verticalGradient(listOf(Color(0xFF03091A), Color(0xFF071A38), Color(0xFF020B20))))
         val w = size.width
         val h = size.height
-        // One luminous flowing wave with fine parallel filaments, rather than wide horizontal stripes.
-        for (i in 0..18) {
-            val shift = (i - 9) * h * .007f
-            val path = Path().apply {
-                moveTo(-w * .08f, h * .53f + shift)
-                cubicTo(w * .22f, h * .31f + shift, w * .38f, h * .77f + shift, w * .67f, h * .49f + shift)
-                cubicTo(w * .83f, h * .33f + shift, w * .93f, h * .43f + shift, w * 1.1f, h * .50f + shift)
+        // S-shaped electric ribbon: a luminous core with progressively softer glows.
+        fun wave(offset: Float): Path = Path().apply {
+            moveTo(-w * .08f, h * .53f + offset)
+            cubicTo(w * .20f, h * .35f + offset, w * .38f, h * .76f + offset, w * .63f, h * .48f + offset)
+            cubicTo(w * .80f, h * .30f + offset, w * .95f, h * .45f + offset, w * 1.10f, h * .47f + offset)
+        }
+        val core = wave(0f)
+        drawPath(core, Color(0xFF047FFF).copy(alpha = .07f), style = Stroke(42.dp.toPx(), cap = StrokeCap.Round))
+        drawPath(core, Color(0xFF047FFF).copy(alpha = .11f), style = Stroke(24.dp.toPx(), cap = StrokeCap.Round))
+        drawPath(core, Color(0xFF009BFF).copy(alpha = .24f), style = Stroke(11.dp.toPx(), cap = StrokeCap.Round))
+        drawPath(core, Color(0xFF35C7FF).copy(alpha = .58f), style = Stroke(3.5.dp.toPx(), cap = StrokeCap.Round))
+        drawPath(core, Color(0xFFACF5FF).copy(alpha = .9f), style = Stroke(.9.dp.toPx(), cap = StrokeCap.Round))
+        for (i in 1..5) {
+            val shift = i * h * .013f
+            drawPath(wave(shift), Color(0xFF078CFF).copy(alpha = .14f / i), style = Stroke(1.1.dp.toPx()))
+            drawPath(wave(-shift), Color(0xFF078CFF).copy(alpha = .12f / i), style = Stroke(1.1.dp.toPx()))
+        }
+    }
+}
+
+@Composable
+private fun ProgressSeek(seconds: Int, onSeek: (Int) -> Unit) {
+    var widthPx by remember { mutableFloatStateOf(1f) }
+    val fraction = seconds.toFloat() / duration
+    Canvas(
+        Modifier.fillMaxWidth().height(27.dp)
+            .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
+            .pointerInput(Unit) { detectTapGestures { onSeek(((it.x / widthPx).coerceIn(0f, 1f) * duration).toInt()) } }
+            .pointerInput(Unit) { detectDragGestures(onDragStart = { onSeek(((it.x / widthPx).coerceIn(0f, 1f) * duration).toInt()) }) { change, _ ->
+                onSeek(((change.position.x / widthPx).coerceIn(0f, 1f) * duration).toInt())
+                change.consume()
+            } }
+    ) {
+        val y = size.height / 2f
+        val inset = 10.dp.toPx()
+        val start = inset
+        val end = size.width - inset
+        val x = start + (end - start) * fraction
+        drawLine(Color(0xFF273F62), Offset(start, y), Offset(end, y), 5.dp.toPx(), cap = StrokeCap.Round)
+        drawLine(yellow, Offset(start, y), Offset(x, y), 5.dp.toPx(), cap = StrokeCap.Round)
+        drawCircle(yellow.copy(alpha = .13f), 15.dp.toPx(), Offset(x, y))
+        drawCircle(yellow.copy(alpha = .24f), 10.dp.toPx(), Offset(x, y))
+        drawCircle(yellow, 7.dp.toPx(), Offset(x, y))
+    }
+}
+
+@Composable
+private fun ShuffleButton(active: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(width = 48.dp, height = 42.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xFF17365C), Color(0xFF06152D))))
+            .border(1.dp, if (active) Color(0xFF6DE6FF) else Color(0xFF5DAAFF), RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(Modifier.size(29.dp)) {
+            val c = if (active) Color(0xFF4BD9FF) else Color.White
+            val sw = 2.7.dp.toPx()
+            val w = size.width
+            val h = size.height
+            // Two crossing shuffle paths, each with a proper arrow head.
+            drawLine(c, Offset(w * .10f, h * .25f), Offset(w * .28f, h * .25f), sw, cap = StrokeCap.Round)
+            drawLine(c, Offset(w * .28f, h * .25f), Offset(w * .72f, h * .76f), sw, cap = StrokeCap.Round)
+            drawLine(c, Offset(w * .72f, h * .76f), Offset(w * .90f, h * .76f), sw, cap = StrokeCap.Round)
+            drawLine(c, Offset(w * .10f, h * .76f), Offset(w * .28f, h * .76f), sw, cap = StrokeCap.Round)
+            drawLine(c, Offset(w * .28f, h * .76f), Offset(w * .72f, h * .25f), sw, cap = StrokeCap.Round)
+            drawLine(c, Offset(w * .72f, h * .25f), Offset(w * .90f, h * .25f), sw, cap = StrokeCap.Round)
+            for (y in listOf(.25f, .76f)) {
+                drawLine(c, Offset(w * .90f, h * y), Offset(w * .76f, h * (y - .13f)), sw, cap = StrokeCap.Round)
+                drawLine(c, Offset(w * .90f, h * y), Offset(w * .76f, h * (y + .13f)), sw, cap = StrokeCap.Round)
             }
-            val distance = kotlin.math.abs(i - 9)
-            val opacity = .26f * (1f - distance / 12f)
-            drawPath(path, color = Color(0xFF0C8DFF).copy(alpha = opacity.coerceAtLeast(.025f)), style = Stroke(width = 1.1.dp.toPx()))
-            if (i == 9) {
-                drawPath(path, color = Color(0xFF008FFF).copy(alpha = .15f), style = Stroke(width = 13.dp.toPx()))
-                drawPath(path, color = Color(0xFF00B8FF).copy(alpha = .28f), style = Stroke(width = 5.dp.toPx()))
-                drawPath(path, color = Color(0xFF7EE7FF).copy(alpha = .85f), style = Stroke(width = 1.4.dp.toPx()))
-            }
+        }
+    }
+}
+
+@Composable
+private fun PlayButton(playing: Boolean, onClick: () -> Unit, diameter: Dp) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(diameter)
+                .shadow(13.dp, CircleShape, ambientColor = blue, spotColor = blue)
+                .clip(CircleShape)
+                .background(Brush.radialGradient(listOf(Color(0xFF188BF4), Color(0xFF0951AB), Color(0xFF082B60))))
+                .border(2.dp, Color(0xFF6CE9FF), CircleShape)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(if (playing) "Ⅱ" else "▶", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -174,7 +258,7 @@ private fun Cover(size: Dp) {
 @Composable
 private fun SymbolButton(heart: Boolean, active: Boolean, onClick: () -> Unit, height: Dp) {
     Box(Modifier.fillMaxWidth().height(height).shadow(if (active) 8.dp else 3.dp, RoundedCornerShape(13.dp), ambientColor = if (heart) Color.Red else blue, spotColor = if (heart) Color.Red else blue).clip(RoundedCornerShape(13.dp)).background(Brush.verticalGradient(listOf(Color(0xFF18365D), Color(0xFF06152C)))).border(1.3.dp, if (active) (if (heart) Color(0xFFFF4057) else blue) else Color(0xFF5AABFF), RoundedCornerShape(13.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(34.dp)) {
+        Canvas(Modifier.size(41.dp)) {
             val w = size.width
             val h = size.height
             val path = Path()
