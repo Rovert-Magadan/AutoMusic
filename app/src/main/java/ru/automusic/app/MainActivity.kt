@@ -4,6 +4,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -80,12 +83,13 @@ private fun AutoMusicScreen() {
     BoxWithConstraints(Modifier.fillMaxSize().background(navy)) {
         val narrow = maxWidth < 720.dp
         val short = maxHeight < 430.dp
-        WaveBackground()
+        Image(painter = painterResource(R.drawable.automusic_wave), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
         val gap = if (short) 6.dp else 12.dp
         Column(Modifier.fillMaxSize().padding(horizontal = if (narrow) 10.dp else 20.dp, vertical = if (short) 8.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("♫ AutoMusic", color = yellow, fontWeight = FontWeight.Bold, fontSize = if (narrow) 18.sp else 25.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Spacer(Modifier.width(if (narrow) 48.dp else 64.dp))
                     ShuffleButton(shuffle, { shuffle = !shuffle })
                     Control(if (source == "Избранное") "Моя волна" else "Избранное", { source = if (source == "Избранное") "Моя волна" else "Избранное"; index = 0; seconds = 0 }, height = 42.dp, small = true)
                     Control(if (showList) "Плеер" else "Список", { showList = !showList }, height = 42.dp, small = true)
@@ -132,13 +136,13 @@ private fun AutoMusicScreen() {
                 }
                 Spacer(Modifier.weight(1f, fill = true))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.width(if (short) 105.dp else 135.dp)) { SymbolButton(true, liked, { liked = !liked; if (liked) disliked = false }, if (short) 55.dp else 68.dp) }
+                    Box(Modifier.width(if (short) 112.dp else 150.dp)) { SymbolButton(true, liked, { liked = !liked; if (liked) disliked = false }, if (short) 58.dp else 72.dp) }
                     Spacer(Modifier.width(if (short) 16.dp else 30.dp))
                     Box(Modifier.width(if (short) 105.dp else 135.dp)) { SymbolButton(false, disliked, { disliked = !disliked; if (disliked) liked = false }, if (short) 55.dp else 68.dp) }
                 }
                 Row(Modifier.fillMaxWidth().height(if (short) 75.dp else 100.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) { Control("⏮", { index = (index + tracks.size - 1) % tracks.size; seconds = 0 }, full = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
-                    Box(Modifier.weight(1f)) { PlayButton(playing, { playing = !playing }, if (short) 72.dp else 94.dp) }
+                    Box(Modifier.weight(1f)) { Control(if (playing) "Ⅱ" else "▶", { playing = !playing }, full = true, accent = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
                     Box(Modifier.weight(1f)) { Control("⏭", { index = (index + 1) % tracks.size; seconds = 0 }, full = true, height = if (short) 65.dp else 76.dp, fontSize = 30) }
                 }
             }
@@ -148,32 +152,6 @@ private fun AutoMusicScreen() {
 }
 
 private fun time(seconds: Int) = "%d:%02d".format(seconds / 60, seconds % 60)
-
-@Composable
-private fun WaveBackground() {
-    Canvas(Modifier.fillMaxSize()) {
-        drawRect(brush = Brush.verticalGradient(listOf(Color(0xFF03091A), Color(0xFF071A38), Color(0xFF020B20))))
-        val w = size.width
-        val h = size.height
-        // S-shaped electric ribbon: a luminous core with progressively softer glows.
-        fun wave(offset: Float): Path = Path().apply {
-            moveTo(-w * .08f, h * .53f + offset)
-            cubicTo(w * .20f, h * .35f + offset, w * .38f, h * .76f + offset, w * .63f, h * .48f + offset)
-            cubicTo(w * .80f, h * .30f + offset, w * .95f, h * .45f + offset, w * 1.10f, h * .47f + offset)
-        }
-        val core = wave(0f)
-        drawPath(core, Color(0xFF047FFF).copy(alpha = .07f), style = Stroke(42.dp.toPx(), cap = StrokeCap.Round))
-        drawPath(core, Color(0xFF047FFF).copy(alpha = .11f), style = Stroke(24.dp.toPx(), cap = StrokeCap.Round))
-        drawPath(core, Color(0xFF009BFF).copy(alpha = .24f), style = Stroke(11.dp.toPx(), cap = StrokeCap.Round))
-        drawPath(core, Color(0xFF35C7FF).copy(alpha = .58f), style = Stroke(3.5.dp.toPx(), cap = StrokeCap.Round))
-        drawPath(core, Color(0xFFACF5FF).copy(alpha = .9f), style = Stroke(.9.dp.toPx(), cap = StrokeCap.Round))
-        for (i in 1..5) {
-            val shift = i * h * .013f
-            drawPath(wave(shift), Color(0xFF078CFF).copy(alpha = .14f / i), style = Stroke(1.1.dp.toPx()))
-            drawPath(wave(-shift), Color(0xFF078CFF).copy(alpha = .12f / i), style = Stroke(1.1.dp.toPx()))
-        }
-    }
-}
 
 @Composable
 private fun ProgressSeek(seconds: Int, onSeek: (Int) -> Unit) {
@@ -204,14 +182,14 @@ private fun ProgressSeek(seconds: Int, onSeek: (Int) -> Unit) {
 @Composable
 private fun ShuffleButton(active: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.size(width = 48.dp, height = 42.dp)
+        Modifier.size(width = 70.dp, height = 42.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(Brush.verticalGradient(listOf(Color(0xFF17365C), Color(0xFF06152D))))
             .border(1.dp, if (active) Color(0xFF6DE6FF) else Color(0xFF5DAAFF), RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(Modifier.size(29.dp)) {
+        Canvas(Modifier.size(32.dp)) {
             val c = if (active) Color(0xFF4BD9FF) else Color.White
             val sw = 2.7.dp.toPx()
             val w = size.width
@@ -232,23 +210,6 @@ private fun ShuffleButton(active: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PlayButton(playing: Boolean, onClick: () -> Unit, diameter: Dp) {
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier.size(diameter)
-                .shadow(13.dp, CircleShape, ambientColor = blue, spotColor = blue)
-                .clip(CircleShape)
-                .background(Brush.radialGradient(listOf(Color(0xFF188BF4), Color(0xFF0951AB), Color(0xFF082B60))))
-                .border(2.dp, Color(0xFF6CE9FF), CircleShape)
-                .clickable(onClick = onClick),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(if (playing) "Ⅱ" else "▶", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
 private fun Cover(size: Dp) {
     Box(Modifier.size(size).background(Brush.linearGradient(listOf(Color(0xFF194B86), Color(0xFF0C1B3B))), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
         Text("♫", color = blue, fontSize = (size.value * 0.52f).sp)
@@ -257,8 +218,8 @@ private fun Cover(size: Dp) {
 
 @Composable
 private fun SymbolButton(heart: Boolean, active: Boolean, onClick: () -> Unit, height: Dp) {
-    Box(Modifier.fillMaxWidth().height(height).shadow(if (active) 8.dp else 3.dp, RoundedCornerShape(13.dp), ambientColor = if (heart) Color.Red else blue, spotColor = if (heart) Color.Red else blue).clip(RoundedCornerShape(13.dp)).background(Brush.verticalGradient(listOf(Color(0xFF18365D), Color(0xFF06152C)))).border(1.3.dp, if (active) (if (heart) Color(0xFFFF4057) else blue) else Color(0xFF5AABFF), RoundedCornerShape(13.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(41.dp)) {
+    Box(Modifier.fillMaxWidth().height(height).shadow(if (active) 11.dp else 5.dp, RoundedCornerShape(16.dp), ambientColor = if (heart) Color.Red else blue, spotColor = if (heart) Color.Red else blue).clip(RoundedCornerShape(16.dp)).background(Brush.verticalGradient(listOf(Color(0xFF173B68), Color(0xFF081C38), Color(0xFF030C20)))).border(1.5.dp, if (active) (if (heart) Color(0xFFFF5C6A) else Color(0xFF35B9FF)) else Color(0xFF65C9FF), RoundedCornerShape(16.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(44.dp)) {
             val w = size.width
             val h = size.height
             val path = Path()
@@ -290,7 +251,7 @@ private fun SymbolButton(heart: Boolean, active: Boolean, onClick: () -> Unit, h
 
 @Composable
 private fun Control(label: String, onClick: () -> Unit, full: Boolean = false, accent: Boolean = false, small: Boolean = false, height: Dp = 58.dp, fontSize: Int = 15) {
-    Box(Modifier.then(if (full) Modifier.fillMaxWidth() else Modifier).height(height).shadow(if (accent) 8.dp else 2.dp, RoundedCornerShape(12.dp), ambientColor = blue, spotColor = blue).clip(RoundedCornerShape(12.dp)).background(if (accent) Brush.verticalGradient(listOf(Color(0xFF1479D7), Color(0xFF06316D))) else Brush.verticalGradient(listOf(Color(0xFF173B6B), Color(0xFF06172F)))).border(if (small) 1.dp else 1.4.dp, if (accent) Color(0xFF4AE3FF) else Color(0xFF67AFFF), RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = if (small) 9.dp else 12.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.then(if (full) Modifier.fillMaxWidth() else Modifier).height(height).shadow(if (accent) 8.dp else 2.dp, RoundedCornerShape(12.dp), ambientColor = blue, spotColor = blue).clip(RoundedCornerShape(12.dp)).background(if (accent) Brush.verticalGradient(listOf(Color(0xFF187DE2), Color(0xFF064B9D), Color(0xFF05224D))) else Brush.verticalGradient(listOf(Color(0xFF173B6B), Color(0xFF081C38), Color(0xFF030C20)))).border(if (small) 1.dp else 1.4.dp, if (accent) Color(0xFF4AE3FF) else Color(0xFF67AFFF), RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = if (small) 9.dp else 12.dp), contentAlignment = Alignment.Center) {
         Text(label, color = Color.White, fontSize = if (small) 12.sp else fontSize.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
