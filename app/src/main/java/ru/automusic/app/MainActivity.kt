@@ -10,6 +10,7 @@ import android.content.ClipData
 import android.content.Intent
 import android.provider.Settings
 import android.media.MediaMetadata
+import android.media.Rating
 import android.media.session.PlaybackState
 import android.media.session.MediaController
 import android.os.SystemClock
@@ -67,6 +68,7 @@ private val blue = Color(0xFF32A9F6)
 private val pale = Color(0xFFA9C5E8)
 private val yellow = Color(0xFFF6C945)
 private const val duration = 247
+private data class PendingReaction(val track: String, val heart: Boolean, val target: Boolean, val started: Long, val method: String)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,6 +81,8 @@ class MainActivity : ComponentActivity() {
 private fun AutoMusicScreen() {
     val context = LocalContext.current
     var report by remember { mutableStateOf<String?>(null) }
+    val reactionLog = remember { mutableStateListOf<String>() }
+    var pending by remember { mutableStateOf<PendingReaction?>(null) }
     report?.let { snapshot ->
         AlertDialog(onDismissRequest = { report = null },
             title = { Text("AutoMusic — диагностика") },
@@ -111,8 +115,24 @@ private fun AutoMusicScreen() {
     val shuffle = false
     val liked = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)?.hasHeart() == true || actions.any { it.action == "actionUndoLike" }
     val disliked = actions.any { it.action == "actionUndoDislike" }
+    val trackKey = metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID) ?: "$title / $artist"
+    val currentPending = pending?.takeIf { it.track == trackKey }
+    val visualLiked = if (currentPending?.heart == true) currentPending.target else if (currentPending?.heart == false && currentPending.target) false else liked
+    val visualDisliked = if (currentPending?.heart == false) currentPending.target else if (currentPending?.heart == true && currentPending.target) false else disliked
+    fun logReaction(line: String) { reactionLog.add(line); if (reactionLog.size > 30) reactionLog.removeAt(0) }
     fun reaction(heart: Boolean) {
         val c = controller ?: return
+        if (currentPending != null) return
+        val target = if (heart) !liked else !disliked
+        val started = SystemClock.elapsedRealtime()
+        if (heart && c.ratingType == Rating.RATING_HEART && ((state?.actions ?: 0L) and PlaybackState.ACTION_SET_RATING) != 0L) {
+            val ok = runCatching { c.transportControls.setRating(Rating.newHeartRating(target)) }.isSuccess
+            if (ok) {
+                pending = PendingReaction(trackKey, true, target, started, "setRating")
+                logReaction("setRating target=$target sent")
+                return
+            }
+        }
         val id = if (heart) { if (liked) "actionUndoLike" else "actionLike" } else { if (disliked) "actionUndoDislike" else "actionDislike" }
         val sent = runCatching {
             val notification = MusicNotificationListener.instance?.activeNotifications
@@ -129,10 +149,33 @@ private fun AutoMusicScreen() {
                 true
             } else false
         }.getOrDefault(false)
-        if (!sent) {
-            val action = actions.firstOrNull { it.action == id }
-            if (action != null) c.transportControls.sendCustomAction(action, action.extras)
-            else android.widget.Toast.makeText(context, "Команда недоступна", android.widget.Toast.LENGTH_SHORT).show()
+        val method = if (sent) "PendingIntent" else "customAction"
+        val delivered = sent || runCatching {
+            val action = actions.firstOrNull { it.action == id } ?: return@runCatching false
+            c.transportControls.sendCustomAction(action, action.extras)
+            true
+        }.getOrDefault(false)
+        if (delivered) {
+            pending = PendingReaction(trackKey, heart, target, started, method)
+            logReaction("$method heart=$heart target=$target sent")
+        } else android.widget.Toast.makeText(context, "Команда недоступна", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    LaunchedEffect(pending, trackKey, liked, disliked) {
+        val p = pending ?: return@LaunchedEffect
+        val elapsed = SystemClock.elapsedRealtime() - p.started
+        if (p.track != trackKey) {
+            logReaction("${p.method}: track changed after ${elapsed} ms; confirmation unknown")
+            pending = null
+        } else if ((if (p.heart) liked else disliked) == p.target) {
+            logReaction("${p.method}: confirmed in ${elapsed} ms")
+            pending = null
+        } else {
+            delay((15000L - elapsed).coerceAtLeast(0L))
+            if (pending == p) {
+                logReaction("${p.method}: timeout 15000 ms")
+                pending = null
+                android.widget.Toast.makeText(context, "Нет подтверждения от Яндекс Музыки", android.widget.Toast.LENGTH_SHORT).show()
+            }
         }
     }
     fun custom(vararg names: String) {
@@ -160,7 +203,7 @@ private fun AutoMusicScreen() {
         val gap = if (short) 6.dp else 12.dp
         Column(Modifier.fillMaxSize().padding(horizontal = if (narrow) 10.dp else 20.dp, vertical = if (short) 8.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("♫ Rovert AutoMusic", modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, onLongPress = { report = runCatching { diagnosticReport(context) }.getOrElse { "Diagnostic error: " + it.javaClass.simpleName } }) }, color = yellow, fontWeight = FontWeight.Bold, fontSize = if (narrow) 16.sp else 23.sp)
+                Text("♫ Rovert AutoMusic", modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, onLongPress = { report = runCatching { diagnosticReport(context) + "\nAutoMusic v0.12 reaction timing:\n" + reactionLog.joinToString("\n") }.getOrElse { "Diagnostic error: " + it.javaClass.simpleName } }) }, color = yellow, fontWeight = FontWeight.Bold, fontSize = if (narrow) 16.sp else 23.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Spacer(Modifier.width(if (narrow) 48.dp else 64.dp))
                     ShuffleButton(shuffle, { custom("Перемешать", "Shuffle") })
@@ -220,10 +263,10 @@ private fun AutoMusicScreen() {
                         }
                     }
                     Box(Modifier.offset(x = leftCenter - reactionWidth / 2, y = reactionCenterY - reactionHeight / 2).width(reactionWidth)) {
-                        SymbolButton(true, liked, { reaction(true) }, reactionHeight)
+                        SymbolButton(true, visualLiked, { reaction(true) }, reactionHeight)
                     }
                     Box(Modifier.offset(x = rightCenter - reactionWidth / 2, y = reactionCenterY - reactionHeight / 2).width(reactionWidth)) {
-                        SymbolButton(false, disliked, { reaction(false) }, reactionHeight)
+                        SymbolButton(false, visualDisliked, { reaction(false) }, reactionHeight)
                     }
                 }
                 Row(Modifier.fillMaxWidth().height(if (short) 75.dp else 100.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
