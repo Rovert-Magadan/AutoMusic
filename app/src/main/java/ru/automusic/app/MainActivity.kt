@@ -1,8 +1,6 @@
 package ru.automusic.app
 
 import android.os.Bundle
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -81,20 +79,11 @@ class MainActivity : ComponentActivity() {
 private fun AutoMusicScreen() {
     val context = LocalContext.current
     var report by remember { mutableStateOf<String?>(null) }
-    var exportText by remember { mutableStateOf("") }
-    val saveReport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-        if (uri != null) {
-            val ok = runCatching {
-                context.contentResolver.openOutputStream(uri)?.use { it.write(exportText.toByteArray(Charsets.UTF_8)) } ?: error("No output stream")
-            }.isSuccess
-            android.widget.Toast.makeText(context, if (ok) "Отчёт сохранён" else "Ошибка сохранения", android.widget.Toast.LENGTH_SHORT).show()
-        }
-    }
     report?.let { snapshot ->
         AlertDialog(onDismissRequest = { report = null },
             title = { Text("AutoMusic — диагностика") },
             text = { Column(Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState())) { Text(snapshot, fontSize = 12.sp) } },
-            confirmButton = { TextButton(onClick = { exportText = snapshot; saveReport.launch("AutoMusic-diagnostic.txt") }) { Text("Сохранить TXT") } },
+            confirmButton = { TextButton(onClick = { val result = runCatching { saveDiagnostic(context, snapshot) }; android.widget.Toast.makeText(context, result.getOrElse { "Ошибка: " + it.javaClass.simpleName }, android.widget.Toast.LENGTH_LONG).show() }) { Text("Сохранить TXT") } },
             dismissButton = { Row {
                 TextButton(onClick = {
                     val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -219,7 +208,7 @@ private fun AutoMusicScreen() {
                     Box(Modifier.weight(1f)) { Control("⏭", { controller?.transportControls?.skipToNext() }, full = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
                 }
             }
-            if (!short) Text("v0.9 • Diagnostic", color = pale, fontSize = 10.sp)
+            if (!short) Text("v0.9.1 • Diagnostic", color = pale, fontSize = 10.sp)
         }
     }
 }
