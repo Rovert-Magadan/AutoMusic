@@ -111,6 +111,30 @@ private fun AutoMusicScreen() {
     val shuffle = false
     val liked = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)?.hasHeart() == true || actions.any { it.action == "actionUndoLike" }
     val disliked = actions.any { it.action == "actionUndoDislike" }
+    fun reaction(heart: Boolean) {
+        val c = controller ?: return
+        val id = if (heart) { if (liked) "actionUndoLike" else "actionLike" } else { if (disliked) "actionUndoDislike" else "actionDislike" }
+        val sent = runCatching {
+            val notification = MusicNotificationListener.instance?.activeNotifications
+                ?.filter { it.packageName == "ru.yandex.music" }
+                ?.flatMap { it.notification.actions?.toList().orEmpty() }
+                ?.firstOrNull {
+                    val label = it.title.toString().lowercase()
+                    if (heart) label.contains("нравится") && !label.contains("не нравится")
+                    else label.contains("не нравится")
+                }
+            val intent = notification?.actionIntent
+            if (intent != null) {
+                intent.send()
+                true
+            } else false
+        }.getOrDefault(false)
+        if (!sent) {
+            val action = actions.firstOrNull { it.action == id }
+            if (action != null) c.transportControls.sendCustomAction(action, action.extras)
+            else android.widget.Toast.makeText(context, "Команда недоступна", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
     fun custom(vararg names: String) {
         val action = actions.firstOrNull { a -> names.any { n -> a.action.equals(n, true) || a.name.toString().equals(n, true) } }
         if (action != null) controller?.transportControls?.sendCustomAction(action, action.extras)
@@ -191,15 +215,15 @@ private fun AutoMusicScreen() {
                     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
                         ProgressSeek(seconds, duration, { controller?.transportControls?.seekTo(it * 1000L) })
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(time(seconds), color = pale, fontSize = 11.sp)
-                            Text(time(duration), color = pale, fontSize = 11.sp)
+                            Text(time(seconds), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(time(duration), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     Box(Modifier.offset(x = leftCenter - reactionWidth / 2, y = reactionCenterY - reactionHeight / 2).width(reactionWidth)) {
-                        SymbolButton(true, liked, { custom(if (liked) "actionUndoLike" else "actionLike") }, reactionHeight)
+                        SymbolButton(true, liked, { reaction(true) }, reactionHeight)
                     }
                     Box(Modifier.offset(x = rightCenter - reactionWidth / 2, y = reactionCenterY - reactionHeight / 2).width(reactionWidth)) {
-                        SymbolButton(false, disliked, { custom(if (disliked) "actionUndoDislike" else "actionDislike") }, reactionHeight)
+                        SymbolButton(false, disliked, { reaction(false) }, reactionHeight)
                     }
                 }
                 Row(Modifier.fillMaxWidth().height(if (short) 75.dp else 100.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
