@@ -1,6 +1,14 @@
 package ru.automusic.app
 
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.content.Intent
 import android.provider.Settings
 import android.media.MediaMetadata
@@ -72,6 +80,30 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AutoMusicScreen() {
     val context = LocalContext.current
+    var report by remember { mutableStateOf<String?>(null) }
+    var exportText by remember { mutableStateOf("") }
+    val saveReport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        if (uri != null) {
+            val ok = runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(exportText.toByteArray(Charsets.UTF_8)) } ?: error("No output stream")
+            }.isSuccess
+            android.widget.Toast.makeText(context, if (ok) "Отчёт сохранён" else "Ошибка сохранения", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    report?.let { snapshot ->
+        AlertDialog(onDismissRequest = { report = null },
+            title = { Text("AutoMusic — диагностика") },
+            text = { Column(Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState())) { Text(snapshot, fontSize = 12.sp) } },
+            confirmButton = { TextButton(onClick = { exportText = snapshot; saveReport.launch("AutoMusic-diagnostic.txt") }) { Text("Сохранить TXT") } },
+            dismissButton = { Row {
+                TextButton(onClick = {
+                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("AutoMusic diagnostic", snapshot))
+                }) { Text("Копировать") }
+                TextButton(onClick = { report = null }) { Text("Закрыть") }
+            } }
+        )
+    }
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var metadata by remember { mutableStateOf<MediaMetadata?>(null) }
     var state by remember { mutableStateOf<PlaybackState?>(null) }
@@ -115,7 +147,7 @@ private fun AutoMusicScreen() {
         val gap = if (short) 6.dp else 12.dp
         Column(Modifier.fillMaxSize().padding(horizontal = if (narrow) 10.dp else 20.dp, vertical = if (short) 8.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("♫ AutoMusic", modifier = Modifier.clickable { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, color = yellow, fontWeight = FontWeight.Bold, fontSize = if (narrow) 18.sp else 25.sp)
+                Text("♫ AutoMusic", modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, onLongPress = { report = runCatching { diagnosticReport(context) }.getOrElse { "Diagnostic error: " + it.javaClass.simpleName } }) }, color = yellow, fontWeight = FontWeight.Bold, fontSize = if (narrow) 18.sp else 25.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Spacer(Modifier.width(if (narrow) 48.dp else 64.dp))
                     ShuffleButton(shuffle, { custom("Перемешать", "Shuffle") })
@@ -187,7 +219,7 @@ private fun AutoMusicScreen() {
                     Box(Modifier.weight(1f)) { Control("⏭", { controller?.transportControls?.skipToNext() }, full = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
                 }
             }
-            if (!short) Text("v0.8 • MediaSession", color = pale, fontSize = 10.sp)
+            if (!short) Text("v0.9 • Diagnostic", color = pale, fontSize = 10.sp)
         }
     }
 }
