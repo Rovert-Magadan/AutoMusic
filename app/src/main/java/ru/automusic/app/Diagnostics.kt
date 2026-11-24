@@ -6,7 +6,7 @@ import android.media.session.PlaybackState
 import android.os.Build
 
 internal fun diagnosticReport(context: Context): String = buildString {
-    appendLine("AutoMusic v0.9 Diagnostic")
+    appendLine("AutoMusic v0.9.1 Diagnostic")
     appendLine("Android: ${Build.VERSION.RELEASE} / SDK ${Build.VERSION.SDK_INT}")
     val c = yandexController(context)
     val p = c?.playbackState
@@ -46,4 +46,37 @@ internal fun diagnosticReport(context: Context): String = buildString {
         }
     }
     appendLine("No account credentials or extras values collected.")
+}
+
+
+internal fun saveDiagnostic(context: Context, report: String): String {
+    val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", java.util.Locale.US).format(java.util.Date())
+    val name = "AutoMusic-diagnostic-$stamp.txt"
+    if (Build.VERSION.SDK_INT >= 29) {
+        val resolver = context.contentResolver
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/AutoMusic/")
+            put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: error("Cannot create download")
+        try {
+            resolver.openOutputStream(uri)?.use { it.write(report.toByteArray(Charsets.UTF_8)) }
+                ?: error("Cannot open download")
+            val ready = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            check(resolver.update(uri, ready, null, null) > 0)
+        } catch (e: Exception) {
+            runCatching { resolver.delete(uri, null, null) }
+            throw e
+        }
+        return "Сохранено: Download/AutoMusic/$name"
+    }
+    val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+    val file = java.io.File(dir, name)
+    file.writeText(report, Charsets.UTF_8)
+    return "Сохранено: ${file.absolutePath}"
 }
