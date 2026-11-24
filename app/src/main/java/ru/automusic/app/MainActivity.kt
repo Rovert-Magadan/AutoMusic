@@ -1,6 +1,15 @@
 package ru.automusic.app
 
 import android.os.Bundle
+import android.content.Intent
+import android.provider.Settings
+import android.media.MediaMetadata
+import android.media.session.PlaybackState
+import android.media.session.MediaController
+import android.os.SystemClock
+import android.graphics.Bitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
@@ -62,22 +71,41 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun AutoMusicScreen() {
-    var source by remember { mutableStateOf("Избранное") }
+    val context = LocalContext.current
+    var controller by remember { mutableStateOf<MediaController?>(null) }
+    var metadata by remember { mutableStateOf<MediaMetadata?>(null) }
+    var state by remember { mutableStateOf<PlaybackState?>(null) }
+    var queue by remember { mutableStateOf<List<android.media.session.MediaSession.QueueItem>>(emptyList()) }
     var showList by remember { mutableStateOf(false) }
-    var playing by remember { mutableStateOf(false) }
-    var shuffle by remember { mutableStateOf(false) }
-    var liked by remember { mutableStateOf(false) }
-    var disliked by remember { mutableStateOf(false) }
-    var index by remember { mutableIntStateOf(0) }
     var seconds by remember { mutableIntStateOf(0) }
-    val tracks = remember { (1..24).map { "Демонстрационный трек $it" } }
-    LaunchedEffect(playing, index) {
-        while (playing) {
-            delay(1000)
-            if (seconds >= duration) {
-                index = (index + 1) % tracks.size
-                seconds = 0
-            } else seconds++
+    val duration = ((metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L) / 1000).toInt().coerceAtLeast(1)
+    val playing = state?.state == PlaybackState.STATE_PLAYING
+    val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "Запусти Яндекс Музыку"
+    val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: "Нажми AutoMusic для разрешения доступа"
+    val artwork = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+    val index = queue.indexOfFirst { it.queueId == state?.activeQueueItemId }
+    val tracks = queue.map { it.description.title?.toString() ?: "Трек" }
+    val actions = state?.customActions.orEmpty()
+    val source = "Яндекс Музыка"
+    val shuffle = false
+    val liked = false
+    val disliked = false
+    fun custom(vararg names: String) {
+        val action = actions.firstOrNull { a -> names.any { n -> a.name.toString().equals(n, true) } }
+        if (action != null) controller?.transportControls?.sendCustomAction(action, action.extras)
+        else android.widget.Toast.makeText(context, "Команда не предоставлена Яндекс Музыкой", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val c = yandexController(context)
+            controller = c
+            metadata = c?.metadata
+            state = c?.playbackState
+            queue = c?.queue.orEmpty()
+            val p = state
+            val elapsed = if (p?.state == PlaybackState.STATE_PLAYING && p.lastPositionUpdateTime > 0) ((SystemClock.elapsedRealtime() - p.lastPositionUpdateTime) * p.playbackSpeed).toLong() else 0L
+            seconds = (((p?.position ?: 0L) + elapsed).coerceAtLeast(0L) / 1000).toInt()
+            delay(500)
         }
     }
     BoxWithConstraints(Modifier.fillMaxSize().background(navy)) {
@@ -87,23 +115,24 @@ private fun AutoMusicScreen() {
         val gap = if (short) 6.dp else 12.dp
         Column(Modifier.fillMaxSize().padding(horizontal = if (narrow) 10.dp else 20.dp, vertical = if (short) 8.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("♫ AutoMusic", color = yellow, fontWeight = FontWeight.Bold, fontSize = if (narrow) 18.sp else 25.sp)
+                Text("♫ AutoMusic", modifier = Modifier.clickable { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, color = yellow, fontWeight = FontWeight.Bold, fontSize = if (narrow) 18.sp else 25.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Spacer(Modifier.width(if (narrow) 48.dp else 64.dp))
-                    ShuffleButton(shuffle, { shuffle = !shuffle })
-                    Control(if (source == "Избранное") "Моя волна" else "Избранное", { source = if (source == "Избранное") "Моя волна" else "Избранное"; index = 0; seconds = 0 }, height = 42.dp, small = true)
+                    ShuffleButton(shuffle, { custom("Перемешать", "Shuffle") })
+                    Control("Моя волна", { custom("Моя волна", "My Wave") }, height = 42.dp, small = true)
                     Control(if (showList) "Плеер" else "Список", { showList = !showList }, height = 42.dp, small = true)
                 }
             }
             Text(source.uppercase() + if (showList) "  •  СПИСОК" else "  •  СЕЙЧАС ИГРАЕТ", color = pale, fontSize = 12.sp)
             if (showList) {
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    if (tracks.isEmpty()) item { Text("Очередь не предоставлена Яндекс Музыкой", color = pale) }
                     itemsIndexed(tracks) { i, title ->
-                        Row(Modifier.fillMaxWidth().background(if (i == index) Color(0xDD244B7B) else panel, RoundedCornerShape(9.dp)).clickable { index = i; seconds = 0; playing = true; showList = false }.padding(horizontal = 12.dp, vertical = if (short) 8.dp else 13.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().background(if (i == index) Color(0xDD244B7B) else panel, RoundedCornerShape(9.dp)).clickable { controller?.transportControls?.skipToQueueItem(queue[i].queueId); showList = false }.padding(horizontal = 12.dp, vertical = if (short) 8.dp else 13.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("${i + 1}", color = pale, modifier = Modifier.width(32.dp), fontSize = 13.sp)
                             Column(Modifier.weight(1f)) {
                                 Text(title, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1, fontSize = 15.sp)
-                                Text("Демонстрационный исполнитель", color = pale, fontSize = 12.sp, maxLines = 1)
+                                Text(queue[i].description.subtitle?.toString().orEmpty(), color = pale, fontSize = 12.sp, maxLines = 1)
                             }
                             Text(if (i == index && playing) "♫" else "▶", color = blue, fontSize = 19.sp)
                         }
@@ -112,18 +141,18 @@ private fun AutoMusicScreen() {
             } else {
                 if (narrow) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Cover(if (short) 58.dp else 90.dp)
+                        Cover(if (short) 58.dp else 90.dp, artwork)
                         Column(Modifier.weight(1f)) {
-                            Text(tracks[index], color = Color.White, fontWeight = FontWeight.Bold, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("Демонстрационный исполнитель", color = pale, fontSize = 13.sp, maxLines = 1)
+                            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(artist, color = pale, fontSize = 13.sp, maxLines = 1)
                         }
                     }
                 } else {
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Cover(if (short) 100.dp else 210.dp)
+                        Cover(if (short) 100.dp else 210.dp, artwork)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(tracks[index], color = Color.White, fontWeight = FontWeight.Bold, fontSize = 30.sp)
-                            Text("Демонстрационный исполнитель", color = pale, fontSize = 19.sp)
+                            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 30.sp)
+                            Text(artist, color = pale, fontSize = 19.sp)
                         }
                     }
                 }
@@ -139,26 +168,26 @@ private fun AutoMusicScreen() {
                     val reactionHeight = minOf(if (short) 58.dp else 72.dp, (transportTop - 13.5.dp - 8.dp).coerceAtLeast(1.dp))
                     val reactionWidth = minOf(if (short) 112.dp else 150.dp, buttonWidth)
                     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                        ProgressSeek(seconds, { seconds = it })
+                        ProgressSeek(seconds, duration, { controller?.transportControls?.seekTo(it * 1000L) })
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(time(seconds), color = pale, fontSize = 11.sp)
                             Text(time(duration), color = pale, fontSize = 11.sp)
                         }
                     }
                     Box(Modifier.offset(x = leftCenter - reactionWidth / 2, y = reactionCenterY - reactionHeight / 2).width(reactionWidth)) {
-                        SymbolButton(true, liked, { liked = !liked; if (liked) disliked = false }, reactionHeight)
+                        SymbolButton(true, liked, { custom("Лайк", "Like", "Нравится") }, reactionHeight)
                     }
                     Box(Modifier.offset(x = rightCenter - reactionWidth / 2, y = reactionCenterY - reactionHeight / 2).width(reactionWidth)) {
-                        SymbolButton(false, disliked, { disliked = !disliked; if (disliked) liked = false }, reactionHeight)
+                        SymbolButton(false, disliked, { custom("Дизлайк", "Dislike", "Не нравится") }, reactionHeight)
                     }
                 }
                 Row(Modifier.fillMaxWidth().height(if (short) 75.dp else 100.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { Control("⏮", { index = (index + tracks.size - 1) % tracks.size; seconds = 0 }, full = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
-                    Box(Modifier.weight(1f)) { Control(if (playing) "Ⅱ" else "▶", { playing = !playing }, full = true, accent = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
-                    Box(Modifier.weight(1f)) { Control("⏭", { index = (index + 1) % tracks.size; seconds = 0 }, full = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
+                    Box(Modifier.weight(1f)) { Control("⏮", { controller?.transportControls?.skipToPrevious() }, full = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
+                    Box(Modifier.weight(1f)) { Control(if (playing) "Ⅱ" else "▶", { if (playing) controller?.transportControls?.pause() else controller?.transportControls?.play() }, full = true, accent = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
+                    Box(Modifier.weight(1f)) { Control("⏭", { controller?.transportControls?.skipToNext() }, full = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
                 }
             }
-            if (!short) Text("ПРОТОТИП • без подключения к Яндекс Музыке", color = pale, fontSize = 10.sp)
+            if (!short) Text("v0.8 • MediaSession", color = pale, fontSize = 10.sp)
         }
     }
 }
@@ -166,14 +195,14 @@ private fun AutoMusicScreen() {
 private fun time(seconds: Int) = "%d:%02d".format(seconds / 60, seconds % 60)
 
 @Composable
-private fun ProgressSeek(seconds: Int, onSeek: (Int) -> Unit) {
+private fun ProgressSeek(seconds: Int, duration: Int, onSeek: (Int) -> Unit) {
     var widthPx by remember { mutableFloatStateOf(1f) }
-    val fraction = seconds.toFloat() / duration
+    val fraction = (seconds.toFloat() / duration).coerceIn(0f, 1f)
     Canvas(
         Modifier.fillMaxWidth().height(27.dp)
             .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
-            .pointerInput(Unit) { detectTapGestures { onSeek(((it.x / widthPx).coerceIn(0f, 1f) * duration).toInt()) } }
-            .pointerInput(Unit) { detectDragGestures(onDragStart = { onSeek(((it.x / widthPx).coerceIn(0f, 1f) * duration).toInt()) }) { change, _ ->
+            .pointerInput(duration) { detectTapGestures { onSeek(((it.x / widthPx).coerceIn(0f, 1f) * duration).toInt()) } }
+            .pointerInput(duration) { detectDragGestures(onDragStart = { onSeek(((it.x / widthPx).coerceIn(0f, 1f) * duration).toInt()) }) { change, _ ->
                 onSeek(((change.position.x / widthPx).coerceIn(0f, 1f) * duration).toInt())
                 change.consume()
             } }
@@ -222,7 +251,11 @@ private fun ShuffleButton(active: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Cover(size: Dp) {
+private fun Cover(size: Dp, artwork: Bitmap? = null) {
+    if (artwork != null) {
+        Image(artwork.asImageBitmap(), contentDescription = null, modifier = Modifier.size(size).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+        return
+    }
     Box(Modifier.size(size).background(Brush.linearGradient(listOf(Color(0xFF194B86), Color(0xFF0C1B3B))), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
         Text("♫", color = blue, fontSize = (size.value * 0.52f).sp)
     }
