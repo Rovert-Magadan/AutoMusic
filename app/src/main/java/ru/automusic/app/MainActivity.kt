@@ -61,7 +61,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.delay
 
-private val navy = Color(0xFF07162E)
+private val navy = Color(0xFF19243F)
 private val panel = Color(0xDD142D50)
 private val blue = Color(0xFF32A9F6)
 private val pale = Color(0xFFA9C5E8)
@@ -109,10 +109,10 @@ private fun AutoMusicScreen() {
     val actions = state?.customActions.orEmpty()
     val source = "Яндекс Музыка"
     val shuffle = false
-    val liked = false
-    val disliked = false
+    val liked = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)?.hasHeart() == true || actions.any { it.action == "actionUndoLike" }
+    val disliked = actions.any { it.action == "actionUndoDislike" }
     fun custom(vararg names: String) {
-        val action = actions.firstOrNull { a -> names.any { n -> a.name.toString().equals(n, true) } }
+        val action = actions.firstOrNull { a -> names.any { n -> a.action.equals(n, true) || a.name.toString().equals(n, true) } }
         if (action != null) controller?.transportControls?.sendCustomAction(action, action.extras)
         else android.widget.Toast.makeText(context, "Команда не предоставлена Яндекс Музыкой", android.widget.Toast.LENGTH_SHORT).show()
     }
@@ -132,11 +132,11 @@ private fun AutoMusicScreen() {
     BoxWithConstraints(Modifier.fillMaxSize().background(navy)) {
         val narrow = maxWidth < 720.dp
         val short = maxHeight < 430.dp
-        Image(painter = painterResource(R.drawable.automusic_wave), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+        AuroraBackground(Modifier.fillMaxSize())
         val gap = if (short) 6.dp else 12.dp
         Column(Modifier.fillMaxSize().padding(horizontal = if (narrow) 10.dp else 20.dp, vertical = if (short) 8.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("♫ AutoMusic", modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, onLongPress = { report = runCatching { diagnosticReport(context) }.getOrElse { "Diagnostic error: " + it.javaClass.simpleName } }) }, color = yellow, fontWeight = FontWeight.Bold, fontSize = if (narrow) 18.sp else 25.sp)
+                Text("♫ Rovert AutoMusic", modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, onLongPress = { report = runCatching { diagnosticReport(context) }.getOrElse { "Diagnostic error: " + it.javaClass.simpleName } }) }, color = yellow, fontWeight = FontWeight.Bold, fontSize = if (narrow) 16.sp else 23.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Spacer(Modifier.width(if (narrow) 48.dp else 64.dp))
                     ShuffleButton(shuffle, { custom("Перемешать", "Shuffle") })
@@ -196,10 +196,10 @@ private fun AutoMusicScreen() {
                         }
                     }
                     Box(Modifier.offset(x = leftCenter - reactionWidth / 2, y = reactionCenterY - reactionHeight / 2).width(reactionWidth)) {
-                        SymbolButton(true, liked, { custom("Лайк", "Like", "Нравится") }, reactionHeight)
+                        SymbolButton(true, liked, { custom(if (liked) "actionUndoLike" else "actionLike") }, reactionHeight)
                     }
                     Box(Modifier.offset(x = rightCenter - reactionWidth / 2, y = reactionCenterY - reactionHeight / 2).width(reactionWidth)) {
-                        SymbolButton(false, disliked, { custom("Дизлайк", "Dislike", "Не нравится") }, reactionHeight)
+                        SymbolButton(false, disliked, { custom(if (disliked) "actionUndoDislike" else "actionDislike") }, reactionHeight)
                     }
                 }
                 Row(Modifier.fillMaxWidth().height(if (short) 75.dp else 100.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -208,7 +208,7 @@ private fun AutoMusicScreen() {
                     Box(Modifier.weight(1f)) { Control("⏭", { controller?.transportControls?.skipToNext() }, full = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
                 }
             }
-            if (!short) Text("v0.9.1 • Diagnostic", color = pale, fontSize = 10.sp)
+            if (!short) Text("v0.10 • Aurora", color = pale, fontSize = 10.sp)
         }
     }
 }
@@ -246,7 +246,7 @@ private fun ShuffleButton(active: Boolean, onClick: () -> Unit) {
     Box(
         Modifier.size(width = 70.dp, height = 42.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Brush.verticalGradient(listOf(Color(0xFF17365C), Color(0xFF06152D))))
+            .background(Brush.verticalGradient(listOf(Color(0xFF17365C), Color(0xFF172C48))))
             .border(1.dp, if (active) Color(0xFF6DE6FF) else Color(0xFF5DAAFF), RoundedCornerShape(12.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -284,40 +284,82 @@ private fun Cover(size: Dp, artwork: Bitmap? = null) {
 
 @Composable
 private fun SymbolButton(heart: Boolean, active: Boolean, onClick: () -> Unit, height: Dp) {
-    Box(Modifier.fillMaxWidth().height(height).shadow(if (active) 11.dp else 5.dp, RoundedCornerShape(16.dp), ambientColor = if (heart) Color.Red else blue, spotColor = if (heart) Color.Red else blue).clip(RoundedCornerShape(16.dp)).background(Brush.verticalGradient(listOf(Color(0xFF173B68), Color(0xFF081C38), Color(0xFF030C20)))).border(1.5.dp, if (active) (if (heart) Color(0xFFFF5C6A) else Color(0xFF35B9FF)) else Color(0xFF65C9FF), RoundedCornerShape(16.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().height(height).shadow(if (active) 11.dp else 5.dp, RoundedCornerShape(16.dp), ambientColor = if (heart) Color.Red else blue, spotColor = if (heart) Color.Red else blue).clip(RoundedCornerShape(16.dp)).background(Brush.verticalGradient(listOf(Color(0xFF173B68), Color(0xFF254764), Color(0xFF172C48)))).border(1.5.dp, if (active) (if (heart) Color(0xFFFF5C6A) else Color(0xFF35B9FF)) else Color(0xFF65C9FF), RoundedCornerShape(16.dp)).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(44.dp)) {
             val w = size.width
             val h = size.height
             val path = Path()
+            fun x(v: Float) = w * v / 24f
+            fun y(v: Float) = h * v / 24f
             if (heart) {
-                path.moveTo(w * .5f, h * .88f)
-                path.cubicTo(w * .12f, h * .60f, -w * .04f, h * .35f, w * .18f, h * .18f)
-                path.cubicTo(w * .34f, h * .04f, w * .47f, h * .16f, w * .5f, h * .25f)
-                path.cubicTo(w * .62f, h * .04f, w * .84f, h * .06f, w * .91f, h * .24f)
-                path.cubicTo(w * 1.04f, h * .48f, w * .77f, h * .71f, w * .5f, h * .88f)
+                path.moveTo(x(12f), y(21f))
+                path.lineTo(x(3.2f), y(12.4f))
+                path.cubicTo(x(-1f), y(8.1f), x(3.9f), y(1.1f), x(9.2f), y(4.3f))
+                path.cubicTo(x(10.3f), y(4.9f), x(11.1f), y(5.8f), x(12f), y(6.7f))
+                path.cubicTo(x(13f), y(5.6f), x(14f), y(4.5f), x(15.2f), y(4f))
+                path.cubicTo(x(20.7f), y(1.8f), x(24.5f), y(8.2f), x(20.8f), y(12.4f))
                 path.close()
             } else {
-                path.moveTo(w * .23f, h * .12f)
-                path.lineTo(w * .73f, h * .12f)
-                path.cubicTo(w * .86f, h * .12f, w * .91f, h * .22f, w * .86f, h * .35f)
-                path.lineTo(w * .70f, h * .63f)
-                path.lineTo(w * .57f, h * .63f)
-                path.lineTo(w * .57f, h * .87f)
-                path.cubicTo(w * .57f, h * .98f, w * .41f, h * .97f, w * .36f, h * .87f)
-                path.lineTo(w * .18f, h * .60f)
-                path.lineTo(w * .12f, h * .60f)
-                path.lineTo(w * .12f, h * .15f)
+                path.moveTo(x(7f), y(3f))
+                path.lineTo(x(18f), y(3f))
+                path.cubicTo(x(19.2f), y(3f), x(20f), y(3.7f), x(20.2f), y(5f))
+                path.lineTo(x(21.2f), y(11f))
+                path.cubicTo(x(21.5f), y(12.8f), x(20.5f), y(14f), x(19f), y(14f))
+                path.lineTo(x(13f), y(14f))
+                path.lineTo(x(14f), y(19f))
+                path.cubicTo(x(14.4f), y(21f), x(12.4f), y(22f), x(11f), y(21f))
+                path.lineTo(x(7f), y(13f))
                 path.close()
+                path.addRoundRect(androidx.compose.ui.geometry.RoundRect(androidx.compose.ui.geometry.Rect(x(1.5f), y(3f), x(5.5f), y(13f)), androidx.compose.ui.geometry.CornerRadius(x(1.2f))))
             }
             val color = if (active) (if (heart) Color(0xFFFF293D) else Color(0xFF159EFF)) else Color.White
-            drawPath(path, color = color.copy(alpha = if (active) 1f else .9f), style = if (active) androidx.compose.ui.graphics.drawscope.Fill else Stroke(width = 2.5.dp.toPx()))
+            drawPath(path, color = color.copy(alpha = if (active) 1f else .9f), style = if (active) androidx.compose.ui.graphics.drawscope.Fill else Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
         }
     }
 }
 
 @Composable
 private fun Control(label: String, onClick: () -> Unit, full: Boolean = false, accent: Boolean = false, small: Boolean = false, height: Dp = 58.dp, fontSize: Int = 15) {
-    Box(Modifier.then(if (full) Modifier.fillMaxWidth() else Modifier).height(height).shadow(if (accent) 8.dp else 2.dp, RoundedCornerShape(12.dp), ambientColor = blue, spotColor = blue).clip(RoundedCornerShape(12.dp)).background(if (accent) Brush.verticalGradient(listOf(Color(0xFF187DE2), Color(0xFF064B9D), Color(0xFF05224D))) else Brush.verticalGradient(listOf(Color(0xFF173B6B), Color(0xFF081C38), Color(0xFF030C20)))).border(if (small) 1.dp else 1.4.dp, if (accent) Color(0xFF4AE3FF) else Color(0xFF67AFFF), RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = if (small) 9.dp else 12.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.then(if (full) Modifier.fillMaxWidth() else Modifier).height(height).shadow(if (accent) 8.dp else 2.dp, RoundedCornerShape(12.dp), ambientColor = blue, spotColor = blue).clip(RoundedCornerShape(12.dp)).background(if (accent) Brush.verticalGradient(listOf(Color(0xFF187DE2), Color(0xFF064B9D), Color(0xFF05224D))) else Brush.verticalGradient(listOf(Color(0xFF173B6B), Color(0xFF254764), Color(0xFF172C48)))).border(if (small) 1.dp else 1.4.dp, if (accent) Color(0xFF4AE3FF) else Color(0xFF67AFFF), RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = if (small) 9.dp else 12.dp), contentAlignment = Alignment.Center) {
         Text(label, color = Color.White, fontSize = if (small) 12.sp else fontSize.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+@Composable
+private fun AuroraBackground(modifier: Modifier = Modifier) {
+    var phase by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        val start = SystemClock.elapsedRealtime()
+        while (true) {
+            phase = ((SystemClock.elapsedRealtime() - start) % 48000L) / 48000f * 6.283185f
+            delay(34)
+        }
+    }
+    Canvas(modifier) {
+        val t = phase
+        val w = size.width
+        val h = size.height
+        drawRect(Brush.linearGradient(listOf(Color(0xFF19243F), Color(0xFF23445E), Color(0xFF21666E)), start = Offset(0f,h), end = Offset(w,0f)))
+        fun wave(x: Float, offset: Float): Float =
+            h * (.51f + .105f * kotlin.math.sin(x * 6.8f + t + offset) + .045f * kotlin.math.sin(x * 12f - t + offset))
+        val colors = listOf(Color(0xFF48BFFF), Color(0xFF38EBCB), Color(0xFF9676FF))
+        for (band in 0..2) {
+            val offset = band * .8f
+            val path = Path().apply {
+                moveTo(0f, wave(0f,offset))
+                for (i in 1..64) { val x = i / 64f; lineTo(x*w,wave(x,offset)) }
+            }
+            for (i in 24 downTo 1) {
+                val f = i / 24f
+                drawPath(path, colors[band].copy(alpha = .013f + .025f*(1f-f)), style = Stroke(width = h * (.006f + .20f*f), cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            }
+            val curtain = Path().apply {
+                moveTo(0f,wave(0f,offset))
+                for (i in 1..64) { val x=i/64f; lineTo(x*w,wave(x,offset)) }
+                for (i in 64 downTo 0) { val x=i/64f; lineTo(x*w,wave(x,offset)-h*(.16f+.06f*kotlin.math.sin(x*18f+t+offset))) }
+                close()
+            }
+            drawPath(curtain, Brush.verticalGradient(listOf(Color.Transparent, colors[band].copy(alpha=.05f), colors[band].copy(alpha=.24f), Color.Transparent), startY=h*.16f,endY=h*.68f))
+        }
     }
 }
