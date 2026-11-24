@@ -6,7 +6,14 @@ import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.service.notification.NotificationListenerService
 
-class MusicNotificationListener : NotificationListenerService()
+class MusicNotificationListener : NotificationListenerService() {
+    companion object {
+        @Volatile internal var instance: MusicNotificationListener? = null
+    }
+    override fun onListenerConnected() { super.onListenerConnected(); instance = this }
+    override fun onListenerDisconnected() { instance = null; super.onListenerDisconnected() }
+    override fun onDestroy() { instance = null; super.onDestroy() }
+}
 
 internal fun yandexController(context: Context): MediaController? {
     return try {
