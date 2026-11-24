@@ -127,23 +127,35 @@ private fun AutoMusicScreen() {
                         }
                     }
                 }
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                    ProgressSeek(seconds, { seconds = it })
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(time(seconds), color = pale, fontSize = 11.sp)
-                        Text(time(duration), color = pale, fontSize = 11.sp)
+                BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                    val transportGap = 9.dp
+                    val buttonWidth = (maxWidth - transportGap * 2) / 3
+                    val leftCenter = buttonWidth + transportGap / 2
+                    val rightCenter = maxWidth - leftCenter
+                    // The seek line is at 13.5 dp. Transport starts after the
+                    // column gap and half of the unused height in its row.
+                    val transportTop = maxHeight + gap + (if (short) 5.5.dp else 12.dp)
+                    val reactionCenterY = (13.5.dp + transportTop) / 2
+                    val reactionHeight = minOf(if (short) 58.dp else 72.dp, (transportTop - 13.5.dp - 8.dp).coerceAtLeast(1.dp))
+                    val reactionWidth = minOf(if (short) 112.dp else 150.dp, buttonWidth)
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                        ProgressSeek(seconds, { seconds = it })
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(time(seconds), color = pale, fontSize = 11.sp)
+                            Text(time(duration), color = pale, fontSize = 11.sp)
+                        }
                     }
-                }
-                Spacer(Modifier.weight(1f, fill = true))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.width(if (short) 112.dp else 150.dp)) { SymbolButton(true, liked, { liked = !liked; if (liked) disliked = false }, if (short) 58.dp else 72.dp) }
-                    Spacer(Modifier.width(if (short) 16.dp else 30.dp))
-                    Box(Modifier.width(if (short) 105.dp else 135.dp)) { SymbolButton(false, disliked, { disliked = !disliked; if (disliked) liked = false }, if (short) 55.dp else 68.dp) }
+                    Box(Modifier.offset(x = leftCenter - reactionWidth / 2, y = reactionCenterY - reactionHeight / 2).width(reactionWidth)) {
+                        SymbolButton(true, liked, { liked = !liked; if (liked) disliked = false }, reactionHeight)
+                    }
+                    Box(Modifier.offset(x = rightCenter - reactionWidth / 2, y = reactionCenterY - reactionHeight / 2).width(reactionWidth)) {
+                        SymbolButton(false, disliked, { disliked = !disliked; if (disliked) liked = false }, reactionHeight)
+                    }
                 }
                 Row(Modifier.fillMaxWidth().height(if (short) 75.dp else 100.dp), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) { Control("⏮", { index = (index + tracks.size - 1) % tracks.size; seconds = 0 }, full = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
                     Box(Modifier.weight(1f)) { Control(if (playing) "Ⅱ" else "▶", { playing = !playing }, full = true, accent = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
-                    Box(Modifier.weight(1f)) { Control("⏭", { index = (index + 1) % tracks.size; seconds = 0 }, full = true, height = if (short) 65.dp else 76.dp, fontSize = 30) }
+                    Box(Modifier.weight(1f)) { Control("⏭", { index = (index + 1) % tracks.size; seconds = 0 }, full = true, height = if (short) 64.dp else 76.dp, fontSize = 30) }
                 }
             }
             if (!short) Text("ПРОТОТИП • без подключения к Яндекс Музыке", color = pale, fontSize = 10.sp)
